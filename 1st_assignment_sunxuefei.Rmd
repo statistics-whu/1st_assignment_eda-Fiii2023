@@ -1,0 +1,329 @@
+---
+title: "基于R语言对链家武汉二手房交易价格进行分析"
+CJKmainfont: Songti SC
+author: "孙雪菲"
+date: "`2023/10/19`"
+output:
+  pdf_document:
+    latex_engine: xelatex
+  word_document:
+    toc: yes
+  html_document:
+    code_folding: show
+    fig_caption: yes
+    fig_width: 10
+    highlight: tango
+    number_sections: yes
+    theme: cosmo
+    toc: yes
+---
+```{r setup, include = FALSE,echo = FALSE}
+knitr::opts_chunk$set(echo = FALSE,error = FALSE, warning = FALSE, message = FALSE,
+                      out.width = "100%", split = FALSE, fig.align = "center")
+
+#安装包
+install.packages("devtools")
+install.packages("rstatix")
+install.packages("e1071")
+install.packages("jiebaR")
+install.packages("wordcloud2")
+install.packages("skimr")
+install.packages("Cairo")
+install.packages("pastecs")
+install.packages("psych")
+install.packages("kableExtra")
+install.packages("tidyverse")
+install.packages("dplyr")
+
+#加载
+library(tidyverse)
+library(kableExtra)
+library(lubridate)
+library(scales)
+library(patchwork)
+library(ggrepel)
+library(readr)
+library(stringr)
+library(dplyr)
+```
+
+# 你的主要发现
+    武汉二手房交易均价的影响因素多元，主要可以分为以下三类： 1、供需： 2、区位： 3、产品力。
+   其中供需影响分析主要考虑从房源数量与交易均价的波动分析引入；区分影响分析主要考虑从各小区所在地区对应行政区划分比较；产品力分析受限于篇幅及r工具使用熟练度，主要考虑从业态、户型两方面进行分析。
+   【发现1】供需：房源较多的区域，单位均价偏低，呈现出负相关。
+   【发现2】区域：不同区域二手房的单位均价差别很大，武昌区房价远高于其他区域。二手房的区域位置十分重要，地处经济发达城区的二手房具备地理优势，单位均价更高。可以推测区域是影响房价的极其重要的因素之一。
+   【发现3】产品力：不同业态二手房的单位均价差别很大，各区域超高层价格普遍高于其他业态；不同户型二手房的单位均价差别很大，普遍大户型均价高于其他户型。推测原因可能为大户型通常定位为改善型客户，因此无论是品质或者成本均通常高于刚需型。
+  
+
+# 数据介绍
+
+本报告**链家**数据获取方式如下：
+    
+报告人在2023年9月12日获取了[链家武汉二手房网站](https://wh.lianjia.com/ershoufang/)数据。
+    
+- 链家二手房网站默认显示100页，每页30套房产，因此本数据包括3000套房产信息；
+    
+- 数据包括了页面可见部分的文本信息，具体字段及说明见作业说明。
+
+ **说明：**数据仅用于教学；由于不清楚链家数据的展示规则，因此数据可能并不是武汉二手房市场的随机抽样，结论很可能有很大的偏差，甚至可能是错误的。
+    
+```{r}
+# 载入数据和预处理
+lj2023<- read_csv("F:/Git-GitHub/lessn1/2023-09-12_cleaned.csv")
+View(lj2023)
+
+install.packages("dplyr")
+install.packages("skimr")
+install.packages("tidyverse")
+
+library(tidyverse)
+library(readr)
+library(stats)
+library(dplyr)
+library(Cairo)
+library(skimr)
+library(showtext)
+showtext_auto(enable = TRUE)
+# EDA ---------------------------------------------------------------------
+
+## 如下语句可以解决画图中的中文显示问题，当然你可以用showtext包来解决
+
+theme_set(theme(text = element_text(family="Songti SC",size = 10))) #这里family设置成你系统中的中文字体名。
+
+#整理数据-按户型结构区分新增变量【房型】
+```{r}
+lj2023 <-mutate(lj2023,
+             House_type= ifelse(bedrooms == 1 & livingrooms == 0, "一室",  
+                       ifelse(bedrooms == 2 & livingrooms == 0, "两室",  
+                             ifelse(bedrooms == 3 & livingrooms == 0, "三室",  
+                                   ifelse(bedrooms == 4 & livingrooms == 0, "四室",  
+                                         ifelse(bedrooms == 5 & livingrooms ==0, "五室",  
+                                               ifelse(bedrooms == 6 & livingrooms == 0, "六室",  
+                                                     ifelse(bedrooms == 7 & livingrooms == 0, "七室",  
+               ifelse(bedrooms == 1 & livingrooms == 1, "一室一厅",  
+                       ifelse(bedrooms == 2 & livingrooms == 1, "两室一厅",  
+                             ifelse(bedrooms == 3 & livingrooms ==1, "三室一厅",  
+                                   ifelse(bedrooms == 4 & livingrooms == 1, "四室一厅",  
+                                         ifelse(bedrooms == 5 & livingrooms ==1, "五室一厅",  
+                                               ifelse(bedrooms == 6 & livingrooms ==1, "六室一厅",  
+                                                     ifelse(bedrooms == 7 & livingrooms ==1, "七室一厅",    
+ ifelse(bedrooms == 1 & livingrooms == 2, "一室二厅",  
+                       ifelse(bedrooms == 2 & livingrooms == 2, "两室二厅",  
+                             ifelse(bedrooms == 3 & livingrooms ==2, "三室二厅",  
+                                   ifelse(bedrooms == 4 & livingrooms == 2, "四室二厅",  
+                                         ifelse(bedrooms == 5 & livingrooms ==2, "五室二厅",  
+                                               ifelse(bedrooms == 6 & livingrooms ==2, "六室二厅",  
+                                                     ifelse(bedrooms == 7 & livingrooms ==2, "七室二厅",   
+ ifelse(bedrooms == 1 & livingrooms == 3, "一室三厅",  
+                       ifelse(bedrooms == 2 & livingrooms == 3, "两室三厅",  
+                             ifelse(bedrooms == 3 & livingrooms ==3, "三室三厅",  
+                                   ifelse(bedrooms == 4 & livingrooms == 3, "四室三厅",  
+                                         ifelse(bedrooms == 5 & livingrooms ==3, "五室三厅",  
+                                               ifelse(bedrooms == 6 & livingrooms ==3, "六室三厅",  
+                                                     ifelse(bedrooms == 7 & livingrooms ==3, "七室三厅",   
+ ifelse(bedrooms == 1 & livingrooms == 4, "一室四厅",  
+                       ifelse(bedrooms == 2 & livingrooms == 4, "两室四厅",  
+                             ifelse(bedrooms == 3 & livingrooms ==4, "三室四厅",  
+                                   ifelse(bedrooms == 4 & livingrooms == 2, "四室四厅",  
+                                         ifelse(bedrooms == 5 & livingrooms ==4, "五室四厅",  
+                                               ifelse(bedrooms == 6 & livingrooms ==4, "六室四厅",  "七室四厅"
+                                                          )))))))))))))))))))))))))))))))))))
+ print(lj2023)                                                                
+```
+
+#整理数据-按总楼层区分新增变量【业态】
+```{r}
+lj2023 <- mutate(lj2023,  
+  Building_type = ifelse(lj2023$property_t_height >= 1 & lj2023$property_t_height <= 3, "别墅",  
+                        ifelse(lj2023$property_t_height >= 4 & lj2023$property_t_height <= 9, "洋房",  
+                               ifelse(lj2023$property_t_height >= 10 & lj2023$property_t_height <= 18, "小高层",  
+                                     ifelse(lj2023$property_t_height >= 19 & lj2023$property_t_height <= 33, "高层", "超高层")))))  
+print(lj2023)
+```
+
+#整理数据-按总建筑面积区分新增变量【户型】
+```{r}
+lj2023 <- mutate(lj2023,  
+  Property_type = ifelse(lj2023$building_area >= 0 & lj2023$building_area <= 90, "小户型",  
+                        ifelse(lj2023$building_area >90 & lj2023$building_area<= 144, "中户型", "大户型")))
+print(lj2023)
+```
+
+#整理数据-计算平均每间面积并新增变量,利用IQR识别建筑面积异常值
+```{r}
+lj2023 <- mutate(lj2023, 
+   Area_per_room= (building_area/ (bedrooms+livingrooms)))  
+   print(lj2023)
+
+q25 <- quantile(lj2023$Area_per_room, 0.25)  
+q75 <- quantile(lj2023$Area_per_room, 0.75)  
+iqr <- q75 - q25
+threshold <- q25 - 1.5 * iqr  
+lj2023$outlier <- ifelse(lj2023$Area_per_room < threshold | lj2023$Area_per_room > q75 + 1.5 * iqr, "异常值", "正常值")
+print(lj2023)
+```
+
+#整理数据-利用IQR识别单位均价异常值
+```{r}
+Price_q25 <- quantile(lj2023$price_sqm, 0.25)  
+Price_q75 <- quantile(lj2023$price_sqm, 0.75)  
+Price_iqr <- Price_q75 - Price_q25
+threshold <- Price_q25 - 1.5 * Price_iqr  
+lj2023$outlier2 <- ifelse(lj2023$price_sqm < threshold | lj2023$price_sqm > Price_q75 + 1.5 * Price_iqr, "异常值", "正常值")
+print(lj2023)
+```
+ 
+#整理数据-查找为空单元格所在列名称，该6个字段信息不全不建议用作分析
+```{r}
+empty_columns <- sapply(lj2023, function(x) {sum(is.na(x)) > 0})  
+names(lj2023)[empty_columns]
+```
+ 
+#整理数据-查找所在位置字段信息有误
+```{r}
+ unique(lj2023$property_region)
+lj2023$property_region <- ifelse(
+   lj2023$property_region == "街道可", "街道口", lj2023$property_region)
+print(lj2023)
+```
+  
+#整理数据-识别小区和位置字段是否存在一对多
+```{r}
+table(lj2023$property_name, lj2023$property_region)
+```
+
+#筛选数据-非异常非字段信息有误数据另存为数据源
+```{r}
+lj2023_1<-filter(lj2023,!grepl("VR看装修", property_region) & !grepl("随时看", property_region) & !grepl("近地铁", property_region) & !grepl("随时看房", property_region)&!grepl("异常值", outlier)& !grepl("随时看房", property_region)&!grepl("异常值", outlier2))
+  print(lj2023_1 )
+  View(lj2023_1 )
+```
+
+#整理数据-按所在地区对照“武汉三镇及远城区”新增变量【区域】
+```{r}
+areas_rules1 <- c("百步亭", "大智路", "堤角", "二七", "国际百纳", "后湖", "黄埔永清", "常青路", "CBD西北湖", "集贤", "宝丰崇仁", "古田", "汉正街","二七","解放公园","竹叶山花桥","王家墩","江汉路","唐家墩","杨汊湖","青年路","长丰","宝丰","古田","宗关")# 汉口区
+areas_rules2 <- c("沌口","七里庙","汉阳滨江","王家湾","钟家村","四新")# 汉阳区
+areas_rules3 <- c("白沙洲","洪山其它","虎泉杨家湾","珞狮南路","街道口","老南湖","南湖沃尔玛", "楚河汉街","东湖东亭","积玉桥","徐东","武昌老城区","中北路","水果湖","中南路","建二","红钢城","南湖","东湖风景区","白沙洲","杨春湖","卓刀泉") # 武昌区
+lj2023_1$Area <-ifelse(lj2023_1$property_region %in% areas_rules1, "汉口区",
+ifelse(lj2023_1$property_region %in% areas_rules2, "汉阳区",
+ifelse(lj2023_1$property_region %in% areas_rules3, "武昌区", "远城区")))
+print(lj2023_1 )
+View(lj2023_1 )
+```
+
+##各变量的简短信息：
+
+在经过异常值处理处理后数据集（lj2023_1）一共有2828条，每条代表一个房源信息。
+数据集（lj2023_1）集一共涉及25个变量（含新增变量区域、户型、建筑类别等），其中文本类数据17列、数值类数据8列。
+本次数据抓取1278个小区分布于82个地区，考虑分组分析对比故将地区整合为武汉三镇及远城区。
+本次分析对象是武汉市链家平台二手房交易价格，所以将单位均价（price_sqm)视为因变量。区域、户型、建筑类别等作为自变量，（directions2、near_subway、if_2y、vr列变量确失值较多所以本次价格影响因素分析重点不放在这几个变量上）
+
+```{r}
+glimpse(lj2023_1)
+lj2023_1 %>% 
+  head(10) %>%
+  kable(caption = "lj2023_brif") %>% 
+  kable_styling()
+```
+##各变量的简短统计：
+```{r}
+skim(lj2023_1)
+```
+
+通过数据概览可以直观看到：
+
+- 【直观结论1】：房屋总价（price_ttl）平均值145万，最低价11万，中位数134万，最高价630万，超过75%的房源在180万以下。
+
+- 【直观结论2】：房屋均价（price_sqm）平均值1.4万元/平，中位数1.4万元/平，最高2.9万元/平，超过75%的房源在1.8万元/平以下。
+
+- 【直观结论3】：建筑面积（building_area）平均值100平米，中位数95平米，最大231平mimi，超过75%的房源在117平米以下。
+
+# 探索性分析
+
+## 变量1【建筑面积】的数值描述与图形
+发现：整体来看图1【建筑面积与房屋总价图】，建筑面积越大，房屋总价越高，斜率代表单位均价。
+根据【建筑面积直方图与概率密度曲线图】，建筑面积的分布为右偏分布，相比于正态分布更加陡峭。建筑面积主要集中在80-100平米。【建筑面积与单位均价图】，数据散点呈现散射状，有一定正向关系，但不呈现线性关系，因此房价的影响因素应该是多元的。
+```{r}
+ggplot(data = lj2023_1, aes(x =building_area, y =price_ttl)) +  
+  geom_point(color = "lightblue") + 
+  geom_smooth(method = "lm", se = FALSE, color = "pink") 
+
+
+hist(lj2023_1$building_area, main="建筑面积直方图", xlab="建筑面积", breaks=50, col="lightblue")  
+density <- density(lj2023_1$building_area)  
+plot(density, main="建筑面积概率密度曲线", xlab="建筑面积", col="pink") 
+
+ggplot(data = lj2023_1, aes(x =building_area, y =price_sqm)) +  
+  geom_point(color = "lightblue") + 
+  geom_smooth(method = "lm", se = FALSE, color = "pink") 
+```
+
+## 变量2【房源数量】的数值描述与图形
+发现：远城区房源数量远高于武汉三镇中心城区。经查询相关政策可知，早期中心城区全部限购，远城区都不限购。远城区想迁入中心城区必须参照外地人落户的政策执行。中心城区迁远城区，可以直接按武汉市内迁转的政策执行。远城区的落户主城区需要在主城区购买100平方以上的住宅房产，因此推断远城区二手房房源数量远高于武汉三镇，除了辖区范围大，户口及购房政策因素也存在部分影响。
+```{r}
+lj2023_2 <- lj2023_1 %>%  
+  group_by(Area) %>%  
+  summarise(property_num= n(),      
+
+propertyprice_sqm=sum(price_ttl)*10000/sum(building_area))  
+print(lj2023_2) 
+  
+ggplot(lj2023_2, aes(x =Area, y =property_num)) +  
+  geom_bar(stat = "identity", fill = "lightblue") 
+  labs(title = "房源数量分布", x = "区域", y = "房源数量")
+```
+
+## 变量3【单位均价】的数值描述与图形
+发现：根据下图可以发现，单位均价的分布为右偏分布，相比于正态分布更加陡峭。单位均价主要集中在1万-2万元/平米。整体均价分布从0.2万-2.9万，跨度较大。相比较而言，高价位的房源数量要远低于中等价位。
+```{r}
+hist(lj2023_1$price_sqm, main="单位均价直方图", xlab="单位均价", breaks=50, col="lightblue")  
+density <- density(lj2023_1$price_sqm)  
+plot(density, main="单位均价概率密度曲线", xlab="单位均价", col="pink") +
+```
+
+## 变量4【卧室个数】的数值描述与图形
+发现：三室的房源较多，符合常规家庭成员结构。
+```{r}
+hist(lj2023_1$bedrooms, main="卧室数分布", xlab="卧个室数", breaks=50, col="lightblue") 
+```
+
+#探索问题1：单位均价是否受所在区域影响
+【不同区域的单位均价分组箱线图】
+发现：不同区域二手房的单位均价差别很大，武昌区房价远高于其他地区。二手房的区域位置十分重要，地处经济发达城区的人二手房具备地理优势，单位均价更高。可以推测区域是影响房价的极其重要的因素之一
+```{r}
+ggplot(data =lj2023_1, aes(x = Area, y =price_sqm)) +  
+  geom_boxplot() +  
+  theme_minimal() +  
+  labs(title = "不同区域单位均价分组箱型图", x = "区域", y = "单位均价") +  
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+model1 <- lm(price_sqm ~ Area, data =lj2023_1)  
+summary(model1)
+```
+
+
+#探索问题2：单位均价是否受业态影响
+【不同业态单位均价散点图】
+发现：不同业态二手房的单位均价差别很大，各区域超高层价格普遍高于其他业态。
+```{r}
+ggplot(data = lj2023_1, aes(x = Building_type, y = price_sqm)) +    
+  geom_boxplot() +    
+  theme_minimal() +    
+  labs(title = "不同业态单位均价分组箱型图", x = "业态", y = "单位均价") +  
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +  
+  facet_wrap(~Area, scales = "free")
+
+model2 <- lm(price_sqm ~ Building_type, data =lj2023_1)  
+summary(model2)
+```
+
+
+# 发现总结
+  武汉二手房交易均价的影响因素多元，主要可以分为以下三类： 1、供需： 2、区位： 3、产品力。
+   其中供需影响分析主要考虑从房源数量与交易均价的波动分析引入；区分影响分析主要考虑从各小区所在地区对应行政区划分比较；产品力分析受限于篇幅及r工具使用熟练度，主要考虑从业态、户型两方面进行分析。
+   1、供需：房源较多的区域，单位均价偏低，呈现出负相关。
+   2、区域：不同区域二手房的单位均价差别很大，武昌区房价远高于其他区域。二手房的区域位置十分重要，地处经济发达城区的二手房具备地理优势，单位均价更高。可以推测区域是影响房价的极其重要的因素之一。
+   3、产品力：不同业态二手房的单位均价差别很大，各区域超高层价格普遍高于其他业态；不同户型二手房的单位均价差别很大，普遍大户型均价高于其他户型。推测原因可能为大户型通常定位为改善型客户，因此无论是品质或者成本均通常高于刚需型。
+   
+
+
